@@ -8,6 +8,7 @@ package com.homeautogroup.mylittlelibrary;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Application;
 import android.app.DownloadManager;
 
 import android.content.BroadcastReceiver;
@@ -25,6 +26,7 @@ import android.os.Environment;
 import android.support.v4.app.FragmentManager;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.view.WindowManager;
 import android.widget.Toast;
 
 import org.json.JSONException;
@@ -37,8 +39,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 
-
-public class Update extends AppCompatActivity{
+public class Update extends AppCompatActivity {
     private final Context _context;
 
     //url for json with app data
@@ -48,8 +49,9 @@ public class Update extends AppCompatActivity{
     private String myJSONString;
 
     //to be able to differentiate our downloads from others
-    private long  App_DownloadId;
+    private long App_DownloadId;
 
+    private PrefManager prefManager;
     // we use double instead of int as app version is typically 1.2, 1.5.
     private double currentVersionCode;
 
@@ -58,19 +60,20 @@ public class Update extends AppCompatActivity{
     private boolean updateCheck;
     private String TAG = Update.class.getSimpleName();
 
-    public Update(Context context,String serverUrl){
+    public Update(Context context, String serverUrl) {
         this._context = context;
         this.JSON_URL = serverUrl;
         IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
-        _context.registerReceiver(downloadReceiver,filter);
+        _context.registerReceiver(downloadReceiver, filter);
+        prefManager = new PrefManager(context);
 
 
     }
 
 
-    public void checkVersionCode(){
+    public void checkVersionCode() {
         try {
-            currentVersionCode  = _context.getPackageManager().getPackageInfo(_context.getPackageName(),0).versionCode;
+            currentVersionCode = _context.getPackageManager().getPackageInfo(_context.getPackageName(), 0).versionCode;
         } catch (PackageManager.NameNotFoundException e) {
             e.printStackTrace();
         }
@@ -80,6 +83,7 @@ public class Update extends AppCompatActivity{
     public String getJSON_URL() {
         return JSON_URL;
     }
+
     //Method to check updates in the server
     /*
     * We first check if network connection is available
@@ -88,23 +92,23 @@ public class Update extends AppCompatActivity{
     *
     * */
     public void checkUpdate(String url) {
-        if(isNetworkAvailable()){
+        if (isNetworkAvailable()) {
             class GetDataJson extends AsyncTask<String, String, String> {
 
 
                 @Override
                 protected String doInBackground(String... params) {
-                    String uri =params[0];
+                    String uri = params[0];
                     BufferedReader bufferedReader = null;
 
                     try {
                         URL url = new URL(uri);
-                        HttpURLConnection con = (HttpURLConnection)url.openConnection();
+                        HttpURLConnection con = (HttpURLConnection) url.openConnection();
                         StringBuilder sb = new StringBuilder();
                         bufferedReader = new BufferedReader(new InputStreamReader(con.getInputStream()));
                         String json;
-                        while ((json=bufferedReader.readLine())!=null){
-                            sb.append(json+"\n");
+                        while ((json = bufferedReader.readLine()) != null) {
+                            sb.append(json + "\n");
                             /*
                             * If an update was checked successfully and appended to the sting.
                             * Set the boolean updateCheck to true. This will then be used by the onPostExecute Method
@@ -131,11 +135,11 @@ public class Update extends AppCompatActivity{
                 protected void onPostExecute(String s) {
                     //Check if updateCheck is true. By default its false.
                     //This prevents app from crashing if the background task was not successful maybe because of internet connection
-                    if(updateCheck){
+                    if (updateCheck) {
                         super.onPostExecute(s);
                         try {
                             myJSONString = s;
-                        }catch (Exception ignored){
+                        } catch (Exception ignored) {
 
                         }
 
@@ -143,12 +147,12 @@ public class Update extends AppCompatActivity{
                         try {
                             JSONObject jsonObject = new JSONObject(myJSONString);
                             boolean error = jsonObject.getBoolean("error");
-                            if (!error){
+                            if (!error) {
                                 //uid contains new app version
                                 double uid = jsonObject.getDouble("uid");
                                 JSONObject user = jsonObject.getJSONObject("user");
                                 newVersion = user.getString("version");
-                                newAppUrl=user.getString("url");
+                                newAppUrl = user.getString("url");
                                 createdAt = user.getString("created_at");
                                 whatsNew = user.getString("new");
                                 newSize = user.getString("size");
@@ -157,16 +161,21 @@ public class Update extends AppCompatActivity{
                                 //Compare the app version with server version
                                 //if server version is greater . start updateAvailable method
 
-                                if(uid>currentVersionCode){
+                                if (uid > currentVersionCode) {
                                     //Call this method which will download the app
-                                    //updateAvailable();
 
-                                    Uri app_url = Uri.parse(newAppUrl);
-                                    App_DownloadId= DownloadData(app_url);
+
+                                    //PrefManager prefManager = new PrefManager(_context);
+                                    prefManager.setUpdateInfo(whatsNew, newSize, newAppUrl, true, newVersion);
+
+                                    updateAvailable();
+
+                                   /* Uri app_url = Uri.parse(newAppUrl);
+                                    App_DownloadId = DownloadData(app_url);
                                     Log.e(TAG, "starting download");
-
-                                    Log.e(TAG, "update check is okay " +uid);
-                                }else {
+*/
+                                    Log.e(TAG, "update check is okay " + uid);
+                                } else {
                                     /*
                                     * if no update you can use a string to notify users
                                     * sample responses
@@ -197,15 +206,15 @@ public class Update extends AppCompatActivity{
     }
 
 
-
-
     private boolean isNetworkAvailable() {
-        ConnectivityManager connectivityManager = (ConnectivityManager)_context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        ConnectivityManager connectivityManager = (ConnectivityManager) _context.getSystemService(Context.CONNECTIVITY_SERVICE);
         NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
-        return activeNetworkInfo !=null && activeNetworkInfo.isConnected();
+        return activeNetworkInfo != null && activeNetworkInfo.isConnected();
     }
 
     private void updateAvailable() {
+
+        boolean test = false;
 
         AlertDialog.Builder builder = new AlertDialog.Builder(_context);
         builder.setTitle("Update Available");
@@ -216,12 +225,15 @@ public class Update extends AppCompatActivity{
                 Uri app_url = Uri.parse(newAppUrl);
                 App_DownloadId= DownloadData(app_url);
                 Log.e(TAG, "starting download");
+
+
             }
         });
+
         builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialogInterface, int i) {
-                Toast.makeText(_context, "Please Consider Updating later\n"+ "new Size is "+newSize, Toast.LENGTH_SHORT).show();
+                Toast.makeText(_context, "Please Consider Updating later\n" + "new Size is " + newSize, Toast.LENGTH_SHORT).show();
             }
         });
         builder.setNegativeButton("Later", new DialogInterface.OnClickListener() {
@@ -230,9 +242,11 @@ public class Update extends AppCompatActivity{
                 //TODO - implement Later
             }
         });
-        builder.setMessage("Stay updated to enjoy latest features \n"+ whatsNew);
+        builder.setMessage("Stay updated to enjoy latest features \n" + whatsNew);
         AlertDialog update = builder.create();
+        update.getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
         update.show();
+
 
 
     }
@@ -252,25 +266,25 @@ public class Update extends AppCompatActivity{
 
         /*Using your apps private storage also increases your apps size drastically
         * which may lead to user uninstalling your app*/
-        String destination = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)+"/";
+        String destination = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) + "/";
         //choose a unique name to avoid conflicts for the update to be successful
         String fileName = "kyuUpdate2017.apk";
 
 
         //add the filename to destination
-        destination+=fileName;
-        final Uri uridest = Uri.parse("file://"+destination);
+        destination += fileName;
+        final Uri uridest = Uri.parse("file://" + destination);
         //Delete update file if exists
         File file = new File(destination);
-        if(file.exists()){
+        if (file.exists()) {
             //TODO: test this because it fails sometimes
             file.delete();
         }
         request.setDestinationUri(uridest);
-        Log.e(TAG, "saved in"+ uridest);
+        Log.e(TAG, "saved in" + uridest);
         //Enqueue download and save the referenceId
         downloadReference = downloadManager.enqueue(request);
-        return  downloadReference;
+        return downloadReference;
     }
 
 
@@ -280,7 +294,7 @@ public class Update extends AppCompatActivity{
         public void onReceive(Context context, Intent intent) {
             //check if the broadcast message is for our Enqueued download
             long referenceId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
-            if(referenceId ==App_DownloadId){
+            if (referenceId == App_DownloadId) {
                 //Download is know complete. call this method to handle the update
                 updateApp();
             }
@@ -290,7 +304,7 @@ public class Update extends AppCompatActivity{
     private void updateApp() {
         Toast.makeText(_context, "Updating App", Toast.LENGTH_SHORT).show();
         Intent update = new Intent(Intent.ACTION_VIEW);
-        update.setDataAndType(Uri.fromFile(new File(Environment.getExternalStorageDirectory()+ "/download/" + "kyuUpdate2017.apk")),"application/vnd.android.package-archive");
+        update.setDataAndType(Uri.fromFile(new File(Environment.getExternalStorageDirectory() + "/download/" + "kyuUpdate2017.apk")), "application/vnd.android.package-archive");
         update.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         _context.startActivity(update);
     }
